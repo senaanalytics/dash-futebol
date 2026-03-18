@@ -160,9 +160,8 @@ def load_data():
     games["date"]     = pd.to_datetime(games["date"])
     teamstats["date"] = pd.to_datetime(teamstats["date"])
 
-    # Enriquecer teamstats com nomes
-    teamstats = teamstats.merge(teams, on="teamID", how="left")
-    teamstats = teamstats.merge(leagues, on=None, how="left") if "leagueID" in teamstats.columns else teamstats
+    # Enriquecer teamstats com nomes de times
+    teamstats = teamstats.merge(teams[["teamID","name"]], on="teamID", how="left")
 
     # Enriquecer games com ligas e nomes dos times
     games = games.merge(leagues, on="leagueID", how="left")
@@ -449,10 +448,26 @@ with tab3:
     if time_sel == "Selecione...":
         st.info("👈 Selecione um time na barra lateral para ver a análise individual.")
     else:
-        team_id = teams.loc[teams["name"] == time_sel, "teamID"].values[0]
-        ts_time = df_stats[df_stats["teamID"] == team_id].copy()
+        team_rows = teams.loc[teams["name"] == time_sel, "teamID"]
+        if team_rows.empty:
+            st.warning(f"Time '{time_sel}' não encontrado na base de dados.")
+        else:
+            team_id = team_rows.values[0]
+            # Filtra df_stats pelo teamID — não depende do merge de nomes
+            ts_time = teamstats[
+                (teamstats["teamID"] == team_id) &
+                (teamstats["season"].isin(temp_sel))
+            ].copy()
 
-        if ts_time.empty:
+            # Aplica filtro de liga se necessário
+            if liga_sel != "Todas":
+                league_id_filter = leagues.loc[leagues["name"] == liga_sel, "leagueID"].values[0]
+                game_ids_liga = games[games["leagueID"] == league_id_filter]["gameID"].unique()
+                ts_time = ts_time[ts_time["gameID"].isin(game_ids_liga)]
+
+        if team_rows.empty:
+            pass
+        elif ts_time.empty:
             st.warning(f"Sem dados para {time_sel} nos filtros selecionados.")
         else:
             jogos_t    = len(ts_time)
