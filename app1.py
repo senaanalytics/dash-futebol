@@ -111,6 +111,82 @@ st.markdown(f"""
     <p>🏆 {liga_label} &nbsp;|&nbsp; 📅 {temp_label} &nbsp;|&nbsp; {len(df_games):,} jogos</p>
 </div>""", unsafe_allow_html=True)
 
+# ── ANÁLISE DO TIME (aparece logo aqui quando selecionado) ───
+if time_sel != "Selecione...":
+    match = teams[teams["name"] == time_sel]
+    if not match.empty:
+        tid = int(match["teamID"].values[0])
+        ts = teamstats[
+            (teamstats["teamID"] == tid) &
+            (teamstats["season"].isin(temp_sel))
+        ].copy()
+        if liga_sel != "Todas":
+            lid_f = leagues.loc[leagues["name"] == liga_sel, "leagueID"].values[0]
+            gids  = games[games["leagueID"] == lid_f]["gameID"].unique()
+            ts    = ts[ts["gameID"].isin(gids)]
+
+        if ts.empty:
+            st.warning(f"Sem dados para **{time_sel}** nos filtros selecionados.")
+        else:
+            st.markdown(f"""
+            <div style='background:linear-gradient(135deg,#0d2137,#1a3a5c);border-radius:12px;
+                        padding:20px 28px;margin-bottom:20px;border:1px solid #1e4976;'>
+                <h2 style='color:#fff;margin:0'>🔵 {time_sel}</h2>
+                <p style='color:#7fb3d3;margin:4px 0 0 0'>Análise individual — {len(ts)} jogos no período selecionado</p>
+            </div>""", unsafe_allow_html=True)
+
+            v = (ts["result"]=="W").sum()
+            e = (ts["result"]=="D").sum()
+            d = (ts["result"]=="L").sum()
+            c1,c2,c3,c4,c5,c6 = st.columns(6)
+            c1.metric("🎮 Jogos",    len(ts))
+            c2.metric("🏆 Pontos",   int(v*3+e))
+            c3.metric("✅ Vitórias", int(v))
+            c4.metric("🤝 Empates",  int(e))
+            c5.metric("❌ Derrotas", int(d))
+            c6.metric("⚽ Gols",     int(ts["goals"].sum()))
+
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown('<p class="section-title">Resultados por Temporada</p>', unsafe_allow_html=True)
+                rt = ts.groupby(["season","result"]).size().reset_index(name="count")
+                fig = px.bar(rt, x="season", y="count", color="result", barmode="stack", template=PT,
+                             color_discrete_map={"W":C_WIN,"D":C_DRAW,"L":C_LOSS},
+                             labels={"season":"Temporada","count":"Jogos","result":"Resultado"})
+                fig.update_layout(height=300, margin=dict(t=5,b=5,l=5,r=5))
+                st.plotly_chart(fig, use_container_width=True)
+            with col2:
+                st.markdown('<p class="section-title">Gols Reais vs xGoals</p>', unsafe_allow_html=True)
+                gxg = ts.groupby("season").agg(gols=("goals","sum"),xg=("xGoals","sum")).reset_index()
+                fig = go.Figure()
+                fig.add_bar(x=gxg["season"], y=gxg["gols"], name="Gols Reais", marker_color=C_WIN)
+                fig.add_bar(x=gxg["season"], y=gxg["xg"],   name="xGoals",     marker_color="#3b82f6", opacity=0.7)
+                fig.update_layout(barmode="group", template=PT, height=300,
+                                  margin=dict(t=5,b=5,l=5,r=5), legend=dict(orientation="h",y=1.1))
+                st.plotly_chart(fig, use_container_width=True)
+
+            col3, col4 = st.columns(2)
+            with col3:
+                st.markdown('<p class="section-title">Radar de Performance</p>', unsafe_allow_html=True)
+                cols_r = ["goals","xGoals","shots","shotsOnTarget","corners","fouls"]
+                labs_r = ["Gols","xGoals","Chutes","Chutes a Gol","Escanteios","Faltas"]
+                fig = go.Figure()
+                fig.add_trace(go.Scatterpolar(r=ts[cols_r].mean().values,        theta=labs_r, fill="toself", name=time_sel,      line_color=C_WIN))
+                fig.add_trace(go.Scatterpolar(r=teamstats[cols_r].mean().values, theta=labs_r, fill="toself", name="Média Geral", line_color="#3b82f6", opacity=0.5))
+                fig.update_layout(polar=dict(radialaxis=dict(visible=True)), template=PT,
+                                  height=340, margin=dict(t=20,b=20,l=20,r=20), legend=dict(orientation="h",y=-0.1))
+                st.plotly_chart(fig, use_container_width=True)
+            with col4:
+                st.markdown('<p class="section-title">Disciplina por Temporada</p>', unsafe_allow_html=True)
+                disc = ts.groupby("season").agg(amarelos=("yellowCards","sum"),vermelhos=("redCards","sum")).reset_index()
+                fig = go.Figure()
+                fig.add_bar(x=disc["season"], y=disc["amarelos"],  name="🟡 Amarelos",  marker_color="#f59e0b")
+                fig.add_bar(x=disc["season"], y=disc["vermelhos"], name="🔴 Vermelhos", marker_color=C_LOSS)
+                fig.update_layout(barmode="group", template=PT, height=340,
+                                  margin=dict(t=5,b=5,l=5,r=5), legend=dict(orientation="h",y=1.1))
+                st.plotly_chart(fig, use_container_width=True)
+            st.markdown("---")
+
 # ── KPIs ──────────────────────────────────────────────────────
 n = len(df_games)
 c1,c2,c3,c4,c5,c6 = st.columns(6)
@@ -121,6 +197,12 @@ c4.metric("🏠 Casa",         f"{(df_games['result']=='Home Win').sum():,}")
 c5.metric("✈️ Fora",         f"{(df_games['result']=='Away Win').sum():,}")
 c6.metric("🤝 Empates",      f"{(df_games['result']=='Draw').sum():,}")
 st.markdown("---")
+
+# Muda automaticamente para aba do time quando um time é selecionado
+if time_sel != "Selecione...":
+    tab_index = 2
+else:
+    tab_index = 0
 
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Visão Geral","🏆 Ranking","📈 Análise por Time","🔮 xGoals & Avançado"])
 
